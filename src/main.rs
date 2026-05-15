@@ -4,7 +4,7 @@
 
 mod ai;        // fallback IA (Claude API)
 mod commands;  // dispatcher de commandes statique
-mod config;    // clé API et constantes locales
+mod config;    // documentation de configuration
 mod persona;
 mod server;
 mod shell;
@@ -65,6 +65,15 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // ── Chargement du fichier .env ────────────────────────────────────────────
+    //
+    // dotenvy::dotenv() lit le fichier `.env` à la racine du projet et injecte
+    // chaque ligne (clé=valeur) dans les variables d'environnement du processus.
+    //
+    // .ok() ignore l'erreur si le fichier n'existe pas : le honeypot fonctionne
+    // sans .env (on peut toujours passer la clé via --api-key ou l'env shell).
+    dotenvy::dotenv().ok();
+
     // ── Logs ──────────────────────────────────────────────────────────────────
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -158,15 +167,14 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // ── Clé API Claude ────────────────────────────────────────────────────────
-    // Priorité : --api-key CLI > ANTHROPIC_API_KEY env > config.rs (hardcodé)
-    let api_key = args.api_key.or_else(|| {
-        let defaut = config::ANTHROPIC_API_KEY;
-        if defaut.is_empty() || defaut == "REMPLACER_PAR_VOTRE_CLE" {
-            None
-        } else {
-            Some(defaut.to_string())
-        }
-    });
+    //
+    // Ordre de priorité (du plus fort au plus faible) :
+    //   1. --api-key <CLE>          argument CLI explicite
+    //   2. ANTHROPIC_API_KEY=...    variable d'environnement (ou .env)
+    //
+    // clap s'occupe déjà de fusionner CLI + env via `env = "ANTHROPIC_API_KEY"`.
+    // args.api_key contient donc la valeur, quelle que soit la source.
+    let api_key = args.api_key;
 
     if api_key.is_some() {
         info!("🤖 Fallback IA activé (Claude Haiku) — commandes inconnues → IA");

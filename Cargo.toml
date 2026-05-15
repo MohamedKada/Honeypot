@@ -47,3 +47,8 @@ clap         = { version = "4", features = ["derive", "env"] }
 # "json" active la sérialisation automatique via serde_json
 reqwest      = { version = "0.12", features = ["json"] }
 serde_json   = "1"
+
+# ── Variables d'environnement (.env) ─────────────────────────────────────────
+# dotenvy charge automatiquement le fichier .env au démarrage.
+# Cela évite de stocker des secrets (clé API…) en dur dans le code source.
+dotenvy      = "0.15"
