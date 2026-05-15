@@ -1,0 +1,28 @@
+# ============================================================
+# Persona : Serveur Web (Nginx + PHP-FPM + MySQL)
+# ============================================================
+# Cible les attaquants cherchant des serveurs web exposés :
+# injection SQL, RCE via upload PHP, accès /wp-admin, etc.
+
+id          = "web-server"
+nom         = "Serveur Web (Nginx + PHP)"
+description = "Ubuntu 22.04 avec Nginx 1.24, PHP-FPM 8.2 et MySQL 8.0"
+
+[systeme]
+hostname     = "web-prod-01"
+os_version   = "Ubuntu 22.04.3 LTS"
+kernel       = "5.15.0-91-generic"
+arch         = "x86_64"
+ip           = "10.0.0.42"
+charge       = "0.42"
+processus    = 187
+utilisateurs = 1
+disque       = "61.3% of 49.09GB"
+memoire      = "38%"
+swap         = "2%"
+
+[shell]
+utilisateur = "ubuntu"
+home        = "/home/ubuntu"
+# motd_extra est intentionnellement absent :
+# un vrai serveur de prod n'affiche pas ses services dans le MOTD.

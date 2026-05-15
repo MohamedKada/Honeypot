@@ -1,0 +1,26 @@
+# ============================================================
+# Persona : Serveur de Base de Données (PostgreSQL)
+# ============================================================
+# Cible les attaquants cherchant des données sensibles :
+# dump de base, credentials en clair, fichiers de backup.
+
+id          = "database"
+nom         = "Serveur Base de Données (PostgreSQL)"
+description = "Ubuntu 20.04 avec PostgreSQL 15 et pgAdmin — serveur interne"
+
+[systeme]
+hostname     = "db-internal-03"
+os_version   = "Ubuntu 20.04.6 LTS"
+kernel       = "5.4.0-169-generic"
+arch         = "x86_64"
+ip           = "192.168.10.15"
+charge       = "1.24"
+processus    = 243
+utilisateurs = 2
+disque       = "72.8% of 99.02GB"
+memoire      = "64%"
+swap         = "11%"
+
+[shell]
+utilisateur = "postgres"
+home        = "/var/lib/postgresql"

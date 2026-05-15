@@ -1,0 +1,62 @@
+[package]
+name = "honeypot-ssh"
+version = "0.1.0"
+edition = "2021"
+
+# On sépare les dépendances par rôle pour que ce soit lisible
+
+[dependencies]
+# ── Réseau SSH ────────────────────────────────────────────────────────────────
+russh        = "0.44"          # Implémentation du protocole SSH (serveur + client)
+russh-keys   = "0.44"          # Génération et gestion des clés SSH
+
+# ── Runtime asynchrone ────────────────────────────────────────────────────────
+# "full" active toutes les fonctionnalités : timers, canaux, net, fs…
+tokio        = { version = "1", features = ["full"] }
+
+# ── Traits asynchrones ────────────────────────────────────────────────────────
+# Rust ne supporte pas encore nativement les méthodes async dans les traits.
+# async-trait est un patch qui le permet via une macro.
+async-trait  = "0.1"
+
+# ── Gestion d'erreurs ────────────────────────────────────────────────────────
+# anyhow fournit un type d'erreur générique pratique : anyhow::Error
+anyhow       = "1"
+
+# ── Logs structurés ───────────────────────────────────────────────────────────
+tracing             = "0.1"
+tracing-subscriber  = { version = "0.3", features = ["env-filter"] }
+
+# ── Dates et heures ───────────────────────────────────────────────────────────
+chrono       = { version = "0.4", features = ["serde"] }
+
+# ── Sérialisation / Désérialisation ──────────────────────────────────────────
+# serde est le standard Rust pour lire/écrire des données structurées.
+# La feature "derive" permet d'utiliser #[derive(Deserialize)] sur nos structs.
+serde        = { version = "1", features = ["derive"] }
+
+# toml parse les fichiers .toml (format de Cargo.toml) en structs Rust.
+toml         = "0.8"
+
+# ── Interface ligne de commande ───────────────────────────────────────────────
+# clap gère les arguments CLI (--persona web-server, --help, etc.)
+# La feature "derive" permet de déclarer les args avec des structs annotées.
+clap         = { version = "4", features = ["derive", "env"] }
+
+# ── Client HTTP (appels API Claude) ──────────────────────────────────────────
+# "json" active la sérialisation automatique via serde_json
+reqwest      = { version = "0.12", features = ["json"] }
+serde_json   = "1"
+
+# ── Variables d'environnement (.env) ─────────────────────────────────────────
+# dotenvy charge automatiquement le fichier .env au démarrage.
+# Cela évite de stocker des secrets (clé API…) en dur dans le code source.
+dotenvy      = "0.15"
+
+# ── Base de données SQLite (Phase 4) ─────────────────────────────────────────
+# sqlx : accès async à SQLite sans ORM. runtime-tokio-native-tls = runtime tokio.
+# "sqlite" active le driver SQLite. "chrono" pour les types date/heure natifs.
+sqlx         = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlite", "chrono"] }
+
+# uuid : génération d'identifiants uniques de session (v4 = aléatoire).
+uuid         = { version = "1", features = ["v4"] }

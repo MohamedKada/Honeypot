@@ -1,0 +1,22 @@
+# Binaires Rust
+/target/
+
+# Fichier de configuration locale — contient les secrets (clé API…)
+# Ne jamais commiter ce fichier. Utilisez .env.example comme modèle.
+.env
+
+# Clé SSH hôte persistée (fingerprint local, ne pas versionner)
+ssh_host_ed25519_key
+
+# Fichier de test local
+TESTS.txt
+
+# Base de données de logs (Phase 4)
+*.db
+honeypot.db
+
+# Rapports exportés (Phase 4)
+reports/
+
+# Logs exportés
+*.log
