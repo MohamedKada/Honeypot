@@ -172,6 +172,147 @@ fn erreur_generique(commande: &str) -> String {
     format!("bash: {}: command not found\r\n", prog)
 }
 
+// ============================================================================
+// ── SCORING MITRE ATT&CK ─────────────────────────────────────────────────────
+// ============================================================================
+
+/// Résultat de l'analyse MITRE ATT&CK d'une session.
+#[derive(Debug)]
+pub struct ScoreMitre {
+    /// Score de menace de 0 (bruit réseau) à 10 (attaque sophistiquée ciblée).
+    pub score:     u8,
+    /// Tactiques MITRE ATT&CK détectées (ex: ["Discovery", "Credential Access"]).
+    pub tactiques: Vec<String>,
+    /// Techniques MITRE détectées (ex: ["T1033 - System Owner Discovery"]).
+    pub techniques: Vec<String>,
+    /// Résumé en une phrase de l'intention observée.
+    pub resume:    String,
+}
+
+/// Analyse les commandes d'une session et retourne un score MITRE ATT&CK.
+///
+/// Appelé de façon asynchrone après déconnexion de l'attaquant — ne bloque
+/// jamais la session en cours. Retourne None si l'analyse est impossible
+/// (session vide, erreur API, timeout).
+pub async fn analyser_session_mitre(
+    commandes:   &[String],
+    persona_nom: &str,
+    api_key:     &str,
+) -> Option<ScoreMitre> {
+    if commandes.is_empty() {
+        return None;
+    }
+
+    info!(nb_commandes = commandes.len(), "🔍 Scoring MITRE ATT&CK — analyse de la session");
+
+    // ── Construction du prompt ───────────────────────────────────────────────
+    let liste = commandes
+        .iter()
+        .enumerate()
+        .map(|(i, cmd)| format!("{}. {}", i + 1, cmd))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let system_prompt =
+        "Tu es un analyste en cybersécurité spécialisé dans le framework MITRE ATT&CK.\n\
+         Tu reçois la liste des commandes tapées par un attaquant sur un honeypot SSH.\n\
+         Analyse ces commandes et réponds UNIQUEMENT en JSON valide, sans markdown, \
+         sans aucun texte avant ou après, avec ce format exact :\n\
+         {\n\
+           \"score\": <entier 0 à 10>,\n\
+           \"tactiques\": [\"Nom tactique 1\", \"Nom tactique 2\"],\n\
+           \"techniques\": [\"T1234 - Nom technique\", \"T5678 - Nom technique\"],\n\
+           \"resume\": \"<une seule phrase résumant l'intention de l'attaquant>\"\n\
+         }\n\
+         Barème du score :\n\
+           0-2 : bruit réseau, scan automatisé sans intention\n\
+           3-4 : reconnaissance basique (whoami, uname, ls)\n\
+           5-6 : recherche active de vecteurs (find, grep credentials, netstat)\n\
+           7-8 : tentatives d'escalade, persistence ou exfiltration\n\
+           9-10 : attaque ciblée et sophistiquée\n\
+         Tactiques possibles : Reconnaissance, Initial Access, Execution, Persistence,\n\
+         Privilege Escalation, Defense Evasion, Credential Access, Discovery,\n\
+         Lateral Movement, Collection, Command and Control, Exfiltration, Impact.";
+
+    let message_utilisateur = format!(
+        "Serveur cible simulé : {}\n\nCommandes tapées par l'attaquant (dans l'ordre) :\n{}",
+        persona_nom, liste
+    );
+
+    let corps = serde_json::json!({
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 512,
+        "system": system_prompt,
+        "messages": [
+            { "role": "user", "content": message_utilisateur }
+        ]
+    });
+
+    // ── Envoi ────────────────────────────────────────────────────────────────
+    let client = reqwest::Client::new();
+    let reponse = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key",         api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type",      "application/json")
+        .json(&corps)
+        .timeout(std::time::Duration::from_secs(20)) // plus long : analyse complète
+        .send()
+        .await;
+
+    // ── Traitement ───────────────────────────────────────────────────────────
+    let resp = match reponse {
+        Err(e) => { warn!("Erreur réseau scoring MITRE : {:?}", e); return None; }
+        Ok(r)  => r,
+    };
+
+    let json: serde_json::Value = match resp.json().await {
+        Err(e) => { warn!("Erreur parsing JSON scoring MITRE : {:?}", e); return None; }
+        Ok(j)  => j,
+    };
+
+    if json.get("error").is_some() {
+        warn!("Erreur API scoring MITRE : {:?}", json["error"]);
+        return None;
+    }
+
+    let texte = json["content"][0]["text"].as_str().unwrap_or("{}");
+
+    // Nettoyage au cas où l'IA enverrait du markdown malgré tout
+    let texte_propre = texte
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+
+    match serde_json::from_str::<serde_json::Value>(texte_propre) {
+        Err(e) => {
+            warn!("Erreur parsing JSON MITRE (réponse brute : {:?}) : {:?}", texte_propre, e);
+            None
+        }
+        Ok(data) => {
+            let score = data["score"].as_u64().unwrap_or(0).min(10) as u8;
+
+            let tactiques = data["tactiques"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+
+            let techniques = data["techniques"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+
+            let resume = data["resume"].as_str().unwrap_or("(aucun résumé)").to_string();
+
+            Some(ScoreMitre { score, tactiques, techniques, resume })
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+
 /// Normalise les fins de ligne pour le protocole SSH (CRLF obligatoire).
 /// Évite aussi les doubles \r\n qui pourraient apparaître.
 fn normaliser_sortie(texte: &str) -> String {

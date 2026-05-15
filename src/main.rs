@@ -5,6 +5,7 @@
 mod ai;        // fallback IA (Claude API)
 mod commands;  // dispatcher de commandes statique
 mod config;    // documentation de configuration
+mod db;        // persistance SQLite (Phase 4)
 mod persona;
 mod server;
 mod shell;
@@ -189,7 +190,13 @@ async fn main() -> anyhow::Result<()> {
     info!("   → cargo run -- --persona database              (sans menu)");
     info!("   → ANTHROPIC_API_KEY=sk-ant-... cargo run -- .. (avec IA)");
 
-    HoneypotServer::new(persona, vfs, api_key)
+    // ── Base de données SQLite ────────────────────────────────────────────────
+    let db = db::Database::new("honeypot.db").await
+        .map_err(|e| anyhow::anyhow!("Impossible d'ouvrir honeypot.db : {}", e))?;
+    db.creer_tables().await
+        .map_err(|e| anyhow::anyhow!("Erreur création tables SQLite : {}", e))?;
+
+    HoneypotServer::new(persona, vfs, api_key, db)
         .run_on_address(ssh_config, addr)
         .await
         .map_err(|e| anyhow::anyhow!("Erreur serveur SSH : {}", e))?;

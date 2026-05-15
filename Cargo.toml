@@ -52,3 +52,11 @@ serde_json   = "1"
 # dotenvy charge automatiquement le fichier .env au démarrage.
 # Cela évite de stocker des secrets (clé API…) en dur dans le code source.
 dotenvy      = "0.15"
+
+# ── Base de données SQLite (Phase 4) ─────────────────────────────────────────
+# sqlx : accès async à SQLite sans ORM. runtime-tokio-native-tls = runtime tokio.
+# "sqlite" active le driver SQLite. "chrono" pour les types date/heure natifs.
+sqlx         = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlite", "chrono"] }
+
+# uuid : génération d'identifiants uniques de session (v4 = aléatoire).
+uuid         = { version = "1", features = ["v4"] }
