@@ -4,7 +4,12 @@
 
 mod ai;        // fallback IA (Claude API)
 mod commands;  // dispatcher de commandes statique
+<<<<<<< HEAD
 mod config;    // clé API et constantes locales
+=======
+mod config;    // documentation de configuration
+mod db;        // persistance SQLite (Phase 4)
+>>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
 mod persona;
 mod server;
 mod shell;
@@ -65,6 +70,18 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+<<<<<<< HEAD
+=======
+    // ── Chargement du fichier .env ────────────────────────────────────────────
+    //
+    // dotenvy::dotenv() lit le fichier `.env` à la racine du projet et injecte
+    // chaque ligne (clé=valeur) dans les variables d'environnement du processus.
+    //
+    // .ok() ignore l'erreur si le fichier n'existe pas : le honeypot fonctionne
+    // sans .env (on peut toujours passer la clé via --api-key ou l'env shell).
+    dotenvy::dotenv().ok();
+
+>>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
     // ── Logs ──────────────────────────────────────────────────────────────────
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -158,6 +175,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // ── Clé API Claude ────────────────────────────────────────────────────────
+<<<<<<< HEAD
     // Priorité : --api-key CLI > ANTHROPIC_API_KEY env > config.rs (hardcodé)
     let api_key = args.api_key.or_else(|| {
         let defaut = config::ANTHROPIC_API_KEY;
@@ -167,6 +185,16 @@ async fn main() -> anyhow::Result<()> {
             Some(defaut.to_string())
         }
     });
+=======
+    //
+    // Ordre de priorité (du plus fort au plus faible) :
+    //   1. --api-key <CLE>          argument CLI explicite
+    //   2. ANTHROPIC_API_KEY=...    variable d'environnement (ou .env)
+    //
+    // clap s'occupe déjà de fusionner CLI + env via `env = "ANTHROPIC_API_KEY"`.
+    // args.api_key contient donc la valeur, quelle que soit la source.
+    let api_key = args.api_key;
+>>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
 
     if api_key.is_some() {
         info!("🤖 Fallback IA activé (Claude Haiku) — commandes inconnues → IA");
@@ -181,7 +209,17 @@ async fn main() -> anyhow::Result<()> {
     info!("   → cargo run -- --persona database              (sans menu)");
     info!("   → ANTHROPIC_API_KEY=sk-ant-... cargo run -- .. (avec IA)");
 
+<<<<<<< HEAD
     HoneypotServer::new(persona, vfs, api_key)
+=======
+    // ── Base de données SQLite ────────────────────────────────────────────────
+    let db = db::Database::new("honeypot.db").await
+        .map_err(|e| anyhow::anyhow!("Impossible d'ouvrir honeypot.db : {}", e))?;
+    db.creer_tables().await
+        .map_err(|e| anyhow::anyhow!("Erreur création tables SQLite : {}", e))?;
+
+    HoneypotServer::new(persona, vfs, api_key, db)
+>>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
         .run_on_address(ssh_config, addr)
         .await
         .map_err(|e| anyhow::anyhow!("Erreur serveur SSH : {}", e))?;

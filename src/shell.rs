@@ -4,11 +4,22 @@
 
 use std::sync::Arc;
 use chrono::{Local, Timelike};
+<<<<<<< HEAD
+=======
+use tracing::warn;
+>>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
 
 use crate::ai::{fallback_ia, ContexteIA};
 use crate::persona::Persona;
 use crate::vfs::Vfs;
 
+<<<<<<< HEAD
+=======
+/// Nombre maximum d'appels IA par session (~€0.14 à ce plafond avec Haiku 4.5).
+/// Au-delà, les commandes inconnues retournent "command not found" sans appel API.
+const IA_MAX_APPELS: u32 = 100;
+
+>>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
 /// Codes de couleur ANSI
 pub mod ansi {
     pub const RESET: &str = "\x1b[0m";
@@ -86,6 +97,16 @@ pub struct ShellSession {
     /// Clé API Anthropic pour le fallback IA (None = pas d'IA configurée)
     pub api_key:      Option<String>,
 
+<<<<<<< HEAD
+=======
+    /// Compteur d'appels IA pour la session en cours (plafond = IA_MAX_APPELS)
+    pub ia_appels:      u32,
+
+    /// Vrai si la dernière commande a été traitée par le fallback IA.
+    /// Utilisé par server.rs pour annoter les logs SQLite.
+    pub dernier_via_ia: bool,
+
+>>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
     // ── Navigation dans l'historique (flèches ↑↓) ───────────────────────────
     /// État de la machine à états pour les séquences ANSI
     escape_state:   EscapeState,
@@ -108,7 +129,13 @@ impl ShellSession {
             mode: ShellMode::Normal,
             historique: Vec::new(),
             api_key,
+<<<<<<< HEAD
             escape_state:  EscapeState::Normal,
+=======
+            ia_appels:      0,
+            dernier_via_ia: false,
+            escape_state:   EscapeState::Normal,
+>>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
             history_index: None,
             saved_input:   String::new(),
         }
@@ -382,11 +409,33 @@ Last login: {login_date} from {last_ip}\r\n\r\n",
             ShellMode::Normal => {
                 // Étape 1 : dispatcher statique
                 if let Some(sortie) = crate::commands::executer(self, line) {
+<<<<<<< HEAD
                     return sortie;
                 }
 
                 // Étape 2 : fallback IA si une clé est disponible
                 if let Some(ref cle) = self.api_key.clone() {
+=======
+                    self.dernier_via_ia = false;
+                    return sortie;
+                }
+
+                // Étape 2 : fallback IA si une clé est disponible et plafond non atteint
+                if let Some(ref cle) = self.api_key.clone() {
+                    if self.ia_appels >= IA_MAX_APPELS {
+                        // Plafond atteint → on simule un "command not found" sans appel API
+                        warn!(
+                            appels = self.ia_appels,
+                            plafond = IA_MAX_APPELS,
+                            "🚫 Plafond IA atteint — fallback désactivé pour cette session"
+                        );
+                        let prog = line.split_whitespace().next().unwrap_or(line);
+                        return format!("{}: command not found\r\n", prog);
+                    }
+
+                    self.ia_appels += 1;
+                    self.dernier_via_ia = true;
+>>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
                     let ctx = ContexteIA {
                         persona_nom: &self.persona.nom,
                         persona_id:  &self.persona.id,
