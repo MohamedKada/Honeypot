@@ -880,6 +880,35 @@ fn cmd_sudo(session: &mut ShellSession, args: &[&str]) -> String {
         };
     }
 
+    // ── sudo -l : liste les permissions sudo de l'utilisateur ───────────────
+    if args.contains(&"-l") || args.contains(&"--list") {
+        return format!(
+            "Matching Defaults entries for {user} on {host}:\r\n\
+             \x20   env_reset, mail_badpass,\r\n\
+             \x20   secure_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\r\n\
+             \r\n\
+             User {user} may run the following commands on {host}:\r\n\
+             \x20   (ALL : ALL) ALL\r\n",
+            user = session.username,
+            host = session.persona.systeme.hostname,
+        );
+    }
+
+    // ── sudo -h : aide ───────────────────────────────────────────────────────
+    if args.contains(&"-h") || args.contains(&"--help") {
+        return "usage: sudo -h | -K | -k | -V\r\n\
+                usage: sudo -v [-AknS] [-g group] [-h host] [-p prompt] [-u user]\r\n\
+                usage: sudo -l [-AknS] [-g group] [-h host] [-p prompt] [-U user] [-u user] [command]\r\n\
+                usage: sudo [-AbEHknPS] [-r role] [-t type] [-C num] [-g group] [-h host] [-p prompt] [-T timeout] [-u user] [VAR=value] [-i|-s] [<command>]\r\n\
+                usage: sudo -e [-AknS] [-r role] [-t type] [-C num] [-g group] [-h host] [-p prompt] [-T timeout] [-u user] file ...\r\n\r\n\
+                Options:\r\n\
+                \x20 -h, --help                  display help message and exit\r\n\
+                \x20 -l, --list                  list user's privileges or check a specific command\r\n\
+                \x20 -s, --shell                 run shell as the target user\r\n\
+                \x20 -i, --login                 run login shell as the target user\r\n\
+                \x20 -u, --user=user             run command as specified user\r\n".to_string();
+    }
+
     // Construit la sous-commande (sans les flags sudo)
     let commande = if args.contains(&"-s") || args.contains(&"-i") {
         "bash".to_string()
@@ -892,10 +921,7 @@ fn cmd_sudo(session: &mut ShellSession, args: &[&str]) -> String {
     };
 
     if commande.is_empty() && !args.contains(&"-s") && !args.contains(&"-i") {
-        return format!(
-            "usage: sudo command\r\n\
-             Try 'sudo -h' for help.\r\n"
-        );
+        return "sudo: no command specified\r\n".to_string();
     }
 
     // Bascule en mode SudoWait — le prompt s'affiche, l'input suivant est caché
