@@ -14,8 +14,12 @@ TESTS.txt
 # Base de données de logs (Phase 4)
 *.db
 honeypot.db
+honeypot.db-shm
+honeypot.db-wal
 
 # Rapports exportés (Phase 4)
+rapport.html
+*.html
 reports/
 
 # Logs exportés
