@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use russh::server::{Auth, Handle, Handler, Msg, Session};
-use russh::{Channel, ChannelId, ChannelMsg};
+use russh::{Channel, ChannelId, ChannelMsg, MethodSet};
 use russh_keys::key::PublicKey;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
@@ -49,6 +49,10 @@ pub struct SshHandler {
 
     /// Handle vers la base de données SQLite
     pub db:         Database,
+
+    /// Nombre de tentatives d'authentification par mot de passe pour cette connexion.
+    /// On rejette les premières tentatives pour collecter plus de credentials.
+    pub auth_attempts: u8,
 }
 
 impl SshHandler {
@@ -66,6 +70,7 @@ impl SshHandler {
             peer_addr,
             session_id,
             db,
+            auth_attempts: 0,
         }
     }
 }
@@ -97,10 +102,22 @@ impl Handler for SshHandler {
             warn!("Erreur DB credential : {:?}", e);
         }
 
-        // On stocke le username pour l'afficher dans le prompt
+        self.auth_attempts += 1;
+
+        // On rejette la première tentative pour collecter plusieurs credentials
+        // avant d'accepter — comportement réaliste et plus de données collectées.
+        if self.auth_attempts < 3 {
+            warn!(ip = %ip, username = %user, attempt = self.auth_attempts,
+                  "🔑 Tentative rejetée (collecte credentials)");
+            return Ok(Auth::Reject {
+                proceed_with_methods: Some(MethodSet::PASSWORD),
+            });
+        }
+
+        // Accepte à partir de la 2e tentative — on mémorise le username final
         self.session.lock().await.username = user.to_string();
 
-        Ok(Auth::Accept) // on accepte toujours
+        Ok(Auth::Accept)
     }
 
     // ── Authentification par clé publique ────────────────────────────────────
@@ -289,6 +306,16 @@ async fn run_shell(
                                 reponses.push(b"logout\r\n".to_vec());
                                 fermer = true;
                                 break 'traitement;
+                            }
+
+                            InputResult::SudoOutput(sortie) => {
+                                // Sauter à la ligne après la saisie silencieuse
+                                reponses.push(b"\r\n".to_vec());
+                                if !sortie.is_empty() {
+                                    reponses.push(sortie.into_bytes());
+                                }
+                                // Nouveau prompt (potentiellement root#)
+                                reponses.push(shell.prompt().into_bytes());
                             }
 
                             InputResult::Ignore => {}
