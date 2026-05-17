@@ -1,0 +1,26 @@
+# ============================================================
+# Persona : Machine de Développeur
+# ============================================================
+# Cible les attaquants cherchant du code source, des secrets,
+# des clés API, des tokens Git, des fichiers .env, etc.
+
+id          = "dev-machine"
+nom         = "Machine Développeur (workstation)"
+description = "Debian 12 — workstation dev avec Docker, Node.js et Python"
+
+[systeme]
+hostname     = "dev-workstation"
+os_version   = "Debian GNU/Linux 12 (bookworm)"
+kernel       = "6.1.0-18-amd64"
+arch         = "x86_64"
+ip           = "10.10.1.88"
+charge       = "0.15"
+processus    = 312
+utilisateurs = 1
+disque       = "43.1% of 499.00GB"
+memoire      = "51%"
+swap         = "0%"
+
+[shell]
+utilisateur = "devuser"
+home        = "/home/devuser"
