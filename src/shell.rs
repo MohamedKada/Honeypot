@@ -32,6 +32,12 @@ pub enum ShellMode {
     Normal,
     /// Mode vim : on affiche un fichier, on attend :q pour sortir
     Vim(String),
+    /// Saisie cachée du mot de passe pour sudo/su
+    /// Le mode revient à Normal dès que l'utilisateur valide (Enter).
+    SudoWait {
+        /// Sous-commande à simuler après validation (ex: "bash", "cat /etc/shadow")
+        commande: String,
+    },
 }
 
 // ----------------------------------------------------------------------------
@@ -66,6 +72,9 @@ pub enum InputResult {
     /// Efface la ligne courante et la réaffiche avec un nouveau contenu.
     /// Utilisé par les flèches haut/bas pour la navigation dans l'historique.
     RedrawLine(String),
+    /// Sortie directe produite par le mode SudoWait après validation du mot de passe.
+    /// Server.rs envoie \r\n + ce contenu + le nouveau prompt (sans passer par execute()).
+    SudoOutput(String),
 }
 
 // ----------------------------------------------------------------------------
@@ -98,6 +107,10 @@ pub struct ShellSession {
     /// Utilisé par server.rs pour annoter les logs SQLite.
     pub dernier_via_ia: bool,
 
+    /// Buffer de saisie cachée pour sudo/su — jamais affiché à l'écran.
+    /// Vidé et utilisé uniquement pendant le mode SudoWait.
+    pub sudo_buffer: Vec<u8>,
+
     // ── Navigation dans l'historique (flèches ↑↓) ───────────────────────────
     /// État de la machine à états pour les séquences ANSI
     escape_state:   EscapeState,
@@ -122,6 +135,7 @@ impl ShellSession {
             api_key,
             ia_appels:      0,
             dernier_via_ia: false,
+            sudo_buffer:    Vec::new(),
             escape_state:   EscapeState::Normal,
             history_index: None,
             saved_input:   String::new(),
@@ -132,8 +146,8 @@ impl ShellSession {
 
     pub fn prompt(&self) -> String {
         match &self.mode {
-            // En mode vim : pas de prompt bash, juste un curseur bas de page
-            ShellMode::Vim(_) => String::new(),
+            // Vim et SudoWait : pas de prompt bash (curseur reste sur la ligne en cours)
+            ShellMode::Vim(_) | ShellMode::SudoWait { .. } => String::new(),
 
             ShellMode::Normal => {
                 let home = &self.persona.shell.home;
@@ -145,15 +159,23 @@ impl ShellSession {
                     self.current_dir.clone()
                 };
 
+                // root → '#' en rouge, utilisateur normal → '$' en vert
+                let (couleur, symbole) = if self.username == "root" {
+                    ("\x1b[31m", "#")   // rouge
+                } else {
+                    (ansi::GREEN, "$")
+                };
+
                 format!(
-                    "{}{}{}@{}{}:{}{}{}$ ",
-                    ansi::BOLD, ansi::GREEN,
+                    "{}{}{}@{}{}:{}{}{}{}",
+                    ansi::BOLD, couleur,
                     self.username,
                     self.persona.systeme.hostname,
                     ansi::RESET,
                     ansi::CYAN,
                     display_dir,
                     ansi::RESET,
+                    format!(" {symbole} "),
                 )
             }
         }
@@ -238,6 +260,12 @@ Last login: {login_date} from {last_ip}\r\n\r\n",
     // ── Traitement des entrées ────────────────────────────────────────────────
 
     pub fn process_byte(&mut self, byte: u8) -> InputResult {
+        // ── Mode SudoWait : saisie cachée du mot de passe ─────────────────────
+        // Court-circuite tout le reste : les caractères ne sont pas affichés.
+        if matches!(self.mode, ShellMode::SudoWait { .. }) {
+            return self.traiter_octet_sudo(byte);
+        }
+
         // ── Machine à états pour les séquences ANSI ──────────────────────────
         //
         // Les flèches clavier envoient 3 octets successifs :
@@ -373,6 +401,87 @@ Last login: {login_date} from {last_ip}\r\n\r\n",
         }
     }
 
+    // ── Saisie cachée (sudo/su) ───────────────────────────────────────────────
+
+    /// Gère un octet reçu pendant la saisie du mot de passe sudo/su.
+    /// Aucun caractère n'est affiché à l'écran (saisie invisible).
+    fn traiter_octet_sudo(&mut self, byte: u8) -> InputResult {
+        match byte {
+            // Entrée : on valide le mot de passe
+            b'\r' | b'\n' => {
+                let mdp = String::from_utf8_lossy(&self.sudo_buffer).to_string();
+                self.sudo_buffer.clear();
+
+                // On récupère la commande demandée avant de changer de mode
+                let commande = if let ShellMode::SudoWait { commande } = &self.mode {
+                    commande.clone()
+                } else {
+                    String::new()
+                };
+
+                // Log du mot de passe comme entrée de session (visible dans le rapport)
+                self.historique.push(format!("[sudo:mdp] {}", mdp));
+
+                // Détermine si c'est une ouverture de shell root
+                let est_shell_root = matches!(
+                    commande.split_whitespace().next().unwrap_or(""),
+                    "bash" | "sh" | "-s" | "-i" | "su"
+                ) || commande.trim() == "-s"
+                  || commande.trim() == "-i"
+                  || commande.is_empty();
+
+                // Retour en mode Normal avant de construire la sortie
+                self.mode = ShellMode::Normal;
+
+                let sortie = if est_shell_root {
+                    // Élévation privilèges : détermine l'utilisateur cible
+                    let cible = if commande.starts_with("su ") {
+                        commande.split_whitespace().nth(1).unwrap_or("root").to_string()
+                    } else {
+                        "root".to_string()
+                    };
+                    self.username    = cible.clone();
+                    self.current_dir = if cible == "root" {
+                        "/root".to_string()
+                    } else {
+                        format!("/home/{}", cible)
+                    };
+                    String::new() // le nouveau prompt s'affichera via server.rs
+                } else {
+                    // Autre commande sudo : on tente de l'exécuter via le dispatcher
+                    if let Some(res) = crate::commands::executer(self, &commande) {
+                        res
+                    } else {
+                        String::new()
+                    }
+                };
+
+                InputResult::SudoOutput(sortie)
+            }
+
+            // Backspace : on efface sans afficher
+            0x7f | 0x08 => {
+                self.sudo_buffer.pop();
+                InputResult::Ignore
+            }
+
+            // Ctrl+C : annule le sudo, retour au prompt normal
+            0x03 => {
+                self.sudo_buffer.clear();
+                self.mode = ShellMode::Normal;
+                InputResult::Interrupt
+            }
+
+            // Caractères imprimables : collecte silencieuse (aucun écho)
+            32..=126 => {
+                self.sudo_buffer.push(byte);
+                InputResult::Ignore
+            }
+
+            _ => InputResult::Ignore,
+        }
+    }
+
     // ── Exécution ────────────────────────────────────────────────────────────
 
     /// Route vers le bon dispatcher selon le mode actuel.
@@ -391,6 +500,10 @@ Last login: {login_date} from {last_ip}\r\n\r\n",
         match &self.mode {
             // ── Mode Vim : on délègue à vim_commande (sync) ──────────────────
             ShellMode::Vim(_) => crate::commands::vim_commande(self, line),
+
+            // ── Mode SudoWait : ne devrait jamais recevoir de ligne complète ──
+            // (traiter_octet_sudo intercepte l'Enter avant qu'il devienne LineReady)
+            ShellMode::SudoWait { .. } => String::new(),
 
             // ── Mode Normal ───────────────────────────────────────────────────
             ShellMode::Normal => {

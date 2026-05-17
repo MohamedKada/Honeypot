@@ -866,26 +866,58 @@ fn cmd_ping(args: &[&str]) -> String {
 // ── AUTH ─────────────────────────────────────────────────────────────────────
 // ============================================================================
 
-fn cmd_sudo(session: &ShellSession, args: &[&str]) -> String {
+fn cmd_sudo(session: &mut ShellSession, args: &[&str]) -> String {
+    // Déjà root → pas besoin de mot de passe
     if session.username == "root" {
-        // Si on est root, sudo exécute directement (on relance juste la commande)
-        if let Some(cmd) = args.first() {
-            return format!("[sudo simulation: {}]\r\n", args.join(" "));
+        let commande = args.join(" ");
+        if commande.is_empty() {
+            return "sudo: no command specified\r\n".to_string();
         }
+        return if let Some(sortie) = executer(session, &commande) {
+            sortie
+        } else {
+            String::new()
+        };
     }
-    // Simuler une demande de mot de passe — puis refus (plus réaliste)
-    format!(
-        "[sudo] password for {}: \r\n\
-         Sorry, try again.\r\n\
-         [sudo] password for {}: \r\n\
-         sudo: 3 incorrect password attempts\r\n",
-        session.username, session.username
-    )
+
+    // Construit la sous-commande (sans les flags sudo)
+    let commande = if args.contains(&"-s") || args.contains(&"-i") {
+        "bash".to_string()
+    } else {
+        args.iter()
+            .filter(|&&a| !a.starts_with('-'))
+            .copied()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+
+    if commande.is_empty() && !args.contains(&"-s") && !args.contains(&"-i") {
+        return format!(
+            "usage: sudo command\r\n\
+             Try 'sudo -h' for help.\r\n"
+        );
+    }
+
+    // Bascule en mode SudoWait — le prompt s'affiche, l'input suivant est caché
+    session.mode = ShellMode::SudoWait { commande };
+
+    // Pas de \r\n : le curseur reste sur la même ligne pour la saisie
+    format!("[sudo] password for {}: ", session.username)
 }
 
-fn cmd_su(session: &ShellSession, args: &[&str]) -> String {
-    let cible = args.first().copied().unwrap_or("root");
-    format!("Password: \r\nsu: Authentication failure\r\n")
+fn cmd_su(session: &mut ShellSession, args: &[&str]) -> String {
+    let cible = args.iter()
+        .find(|&&a| !a.starts_with('-'))
+        .copied()
+        .unwrap_or("root");
+
+    // On stocke la cible dans la commande pour que traiter_octet_sudo
+    // sache vers quel utilisateur switcher
+    session.mode = ShellMode::SudoWait {
+        commande: format!("su {}", cible),
+    };
+
+    "Password: ".to_string()
 }
 
 // ============================================================================
