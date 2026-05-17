@@ -7,9 +7,11 @@ mod commands;  // dispatcher de commandes statique
 mod config;    // documentation de configuration
 mod db;        // persistance SQLite (Phase 4)
 mod persona;
+mod report;    // génération rapport HTML
 mod server;
 mod shell;
 mod vfs;       // système de fichiers virtuel
+mod webhook;   // alertes Discord / Slack
 
 use std::sync::Arc;
 
@@ -58,6 +60,21 @@ struct Args {
     /// Sans clé, les commandes inconnues retournent "command not found".
     #[arg(long, value_name = "CLE", env = "ANTHROPIC_API_KEY")]
     api_key: Option<String>,
+
+    /// Génère un rapport HTML depuis la base de données et quitte.
+    /// Exemple : --rapport rapport.html
+    #[arg(long, value_name = "FICHIER")]
+    rapport: Option<String>,
+
+    /// URL webhook Discord/Slack pour les alertes hauts scores MITRE.
+    /// Alternative : variable d'environnement WEBHOOK_URL dans .env
+    #[arg(long, value_name = "URL", env = "HONEYPOT_WEBHOOK_URL")]
+    webhook_url: Option<String>,
+
+    /// Score MITRE minimum (0-10) pour déclencher une alerte webhook (défaut : 5).
+    /// Alternative : variable d'environnement SEUIL_ALERTE dans .env
+    #[arg(long, default_value_t = 5, env = "SEUIL_ALERTE")]
+    seuil_alerte: u8,
 }
 
 // ----------------------------------------------------------------------------
@@ -86,6 +103,13 @@ async fn main() -> anyhow::Result<()> {
 
     // ── Arguments CLI ─────────────────────────────────────────────────────────
     let args = Args::parse();
+
+    // ── Mode rapport : génère le HTML et quitte ───────────────────────────────
+    if let Some(ref chemin) = args.rapport {
+        let db = db::Database::new("honeypot.db").await
+            .map_err(|e| anyhow::anyhow!("Impossible d'ouvrir honeypot.db : {}", e))?;
+        return report::generer_rapport(&db, chemin).await;
+    }
 
     // ── Chargement des personas ───────────────────────────────────────────────
     let mut personas = charger_personas(DOSSIER_PERSONAS);
@@ -196,7 +220,7 @@ async fn main() -> anyhow::Result<()> {
     db.creer_tables().await
         .map_err(|e| anyhow::anyhow!("Erreur création tables SQLite : {}", e))?;
 
-    HoneypotServer::new(persona, vfs, api_key, db)
+    HoneypotServer::new(persona, vfs, api_key, db, args.webhook_url, args.seuil_alerte)
         .run_on_address(ssh_config, addr)
         .await
         .map_err(|e| anyhow::anyhow!("Erreur serveur SSH : {}", e))?;

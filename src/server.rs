@@ -53,16 +53,24 @@ pub struct SshHandler {
     /// Nombre de tentatives d'authentification par mot de passe pour cette connexion.
     /// On rejette les premières tentatives pour collecter plus de credentials.
     pub auth_attempts: u8,
+
+    /// URL webhook Discord/Slack pour les alertes hauts scores MITRE (optionnel)
+    pub webhook_url:  Option<String>,
+
+    /// Score MITRE minimum pour déclencher une alerte webhook
+    pub seuil_alerte: u8,
 }
 
 impl SshHandler {
     pub fn new(
-        peer_addr:  Option<std::net::SocketAddr>,
-        persona:    Persona,
-        vfs:        Arc<Vfs>,
-        api_key:    Option<String>,
-        session_id: String,
-        db:         Database,
+        peer_addr:    Option<std::net::SocketAddr>,
+        persona:      Persona,
+        vfs:          Arc<Vfs>,
+        api_key:      Option<String>,
+        session_id:   String,
+        db:           Database,
+        webhook_url:  Option<String>,
+        seuil_alerte: u8,
     ) -> Self {
         let shell = ShellSession::new("unknown".to_string(), persona, vfs, api_key);
         SshHandler {
@@ -71,6 +79,8 @@ impl SshHandler {
             session_id,
             db,
             auth_attempts: 0,
+            webhook_url,
+            seuil_alerte,
         }
     }
 }
@@ -155,18 +165,20 @@ impl Handler for SshHandler {
         channel: Channel<Msg>,
         session: &mut Session,
     ) -> Result<bool, Self::Error> {
-        let shell_arc  = self.session.clone();
-        let handle     = session.handle();
-        let ip         = self.peer_addr
+        let shell_arc    = self.session.clone();
+        let handle       = session.handle();
+        let ip           = self.peer_addr
             .map(|a| a.to_string())
             .unwrap_or_else(|| "?".to_string());
-        let session_id = self.session_id.clone();
-        let db         = self.db.clone();
+        let session_id   = self.session_id.clone();
+        let db           = self.db.clone();
+        let webhook_url  = self.webhook_url.clone();
+        let seuil_alerte = self.seuil_alerte;
 
         info!(ip = %ip, session_id = %session_id, "📡 Canal de session ouvert — spawn tâche shell");
 
         tokio::spawn(async move {
-            if let Err(e) = run_shell(channel, handle, shell_arc, ip, session_id, db).await {
+            if let Err(e) = run_shell(channel, handle, shell_arc, ip, session_id, db, webhook_url, seuil_alerte).await {
                 tracing::error!("Erreur tâche shell : {:?}", e);
             }
         });
@@ -183,12 +195,14 @@ impl Handler for SshHandler {
 // Elle reçoit les messages du canal SSH et envoie les réponses via le Handle.
 
 async fn run_shell(
-    mut channel: Channel<Msg>,
-    handle:      Handle,
-    session:     Arc<Mutex<ShellSession>>,
-    ip:          String,
-    session_id:  String,
-    db:          Database,
+    mut channel:  Channel<Msg>,
+    handle:       Handle,
+    session:      Arc<Mutex<ShellSession>>,
+    ip:           String,
+    session_id:   String,
+    db:           Database,
+    webhook_url:  Option<String>,
+    seuil_alerte: u8,
 ) -> anyhow::Result<()> {
     let channel_id = channel.id();
 
@@ -373,9 +387,11 @@ async fn run_shell(
 
     if let Some(api_key) = api_key_opt {
         if !historique.is_empty() {
-            let ip_mitre  = ip.clone();
-            let sid_mitre = session_id.clone();
-            let db_mitre  = db.clone();
+            let ip_mitre       = ip.clone();
+            let sid_mitre      = session_id.clone();
+            let db_mitre       = db.clone();
+            let webhook_spawn  = webhook_url.clone();
+            let seuil_spawn    = seuil_alerte;
             tokio::spawn(async move {
                 match analyser_session_mitre(&historique, &persona_nom, &api_key).await {
                     Some(score) => {
@@ -405,7 +421,7 @@ async fn run_shell(
                             Some(&score.resume),
                         ).await;
 
-                        if score.score >= 7 {
+                        if score.score >= seuil_spawn {
                             warn!(ip = %ip_mitre, score = score.score,
                                   "🚨 ALERTE — Session à haut risque détectée");
                             let message = format!(
@@ -419,6 +435,22 @@ async fn run_shell(
                                 &score.tactiques.join(", "),
                                 &message,
                             ).await;
+
+                            // ── Alerte webhook ───────────────────────────────
+                            if let Some(ref url) = webhook_spawn {
+                                let _ = crate::webhook::envoyer_alerte_webhook(
+                                    url,
+                                    &ip_mitre,
+                                    &sid_mitre,
+                                    &persona_nom,
+                                    "attaquant",
+                                    score.score,
+                                    niveau,
+                                    &score.tactiques.join(", "),
+                                    &score.techniques.join(", "),
+                                    &score.resume,
+                                ).await;
+                            }
                         }
                     }
                     None => {
@@ -470,19 +502,23 @@ async fn envoyer(
 /// un compteur de références.
 #[derive(Clone)]
 pub struct HoneypotServer {
-    pub persona:  Arc<Persona>,
-    pub vfs:      Arc<Vfs>,
-    pub api_key:  Option<String>,
-    pub db:       Database,
+    pub persona:      Arc<Persona>,
+    pub vfs:          Arc<Vfs>,
+    pub api_key:      Option<String>,
+    pub db:           Database,
+    pub webhook_url:  Option<String>,
+    pub seuil_alerte: u8,
 }
 
 impl HoneypotServer {
-    pub fn new(persona: Persona, vfs: Vfs, api_key: Option<String>, db: Database) -> Self {
+    pub fn new(persona: Persona, vfs: Vfs, api_key: Option<String>, db: Database, webhook_url: Option<String>, seuil_alerte: u8) -> Self {
         HoneypotServer {
-            persona: Arc::new(persona),
-            vfs:     Arc::new(vfs),
+            persona:      Arc::new(persona),
+            vfs:          Arc::new(vfs),
             api_key,
             db,
+            webhook_url,
+            seuil_alerte,
         }
     }
 }
@@ -496,11 +532,13 @@ impl russh::server::Server for HoneypotServer {
             .unwrap_or_else(|| "?".to_string());
         info!(ip = %ip, "🔗 Nouvelle connexion");
 
-        let persona     = (*self.persona).clone();
-        let vfs         = Arc::clone(&self.vfs);
-        let api_key     = self.api_key.clone();
-        let session_id  = Uuid::new_v4().to_string();
-        let db          = self.db.clone();
-        SshHandler::new(peer_addr, persona, vfs, api_key, session_id, db)
+        let persona      = (*self.persona).clone();
+        let vfs          = Arc::clone(&self.vfs);
+        let api_key      = self.api_key.clone();
+        let session_id   = Uuid::new_v4().to_string();
+        let db           = self.db.clone();
+        let webhook_url  = self.webhook_url.clone();
+        let seuil_alerte = self.seuil_alerte;
+        SshHandler::new(peer_addr, persona, vfs, api_key, session_id, db, webhook_url, seuil_alerte)
     }
 }
