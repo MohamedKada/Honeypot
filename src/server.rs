@@ -25,13 +25,10 @@ use russh_keys::key::PublicKey;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
-<<<<<<< HEAD
-=======
 use uuid::Uuid;
 
 use crate::ai::analyser_session_mitre;
 use crate::db::Database;
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
 use crate::persona::Persona;
 use crate::shell::{InputResult, ShellSession};
 use crate::vfs::Vfs;
@@ -42,12 +39,6 @@ use crate::vfs::Vfs;
 
 pub struct SshHandler {
     /// Session shell partagée entre la tâche de canal et d'éventuels callbacks
-<<<<<<< HEAD
-    pub session: Arc<Mutex<ShellSession>>,
-
-    /// Adresse IP de l'attaquant (pour les logs)
-    pub peer_addr: Option<std::net::SocketAddr>,
-=======
     pub session:    Arc<Mutex<ShellSession>>,
 
     /// Adresse IP de l'attaquant (pour les logs)
@@ -58,34 +49,23 @@ pub struct SshHandler {
 
     /// Handle vers la base de données SQLite
     pub db:         Database,
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
 }
 
 impl SshHandler {
     pub fn new(
-<<<<<<< HEAD
-        peer_addr: Option<std::net::SocketAddr>,
-        persona:   Persona,
-        vfs:       Arc<Vfs>,
-        api_key:   Option<String>,
-=======
         peer_addr:  Option<std::net::SocketAddr>,
         persona:    Persona,
         vfs:        Arc<Vfs>,
         api_key:    Option<String>,
         session_id: String,
         db:         Database,
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
     ) -> Self {
         let shell = ShellSession::new("unknown".to_string(), persona, vfs, api_key);
         SshHandler {
             session: Arc::new(Mutex::new(shell)),
             peer_addr,
-<<<<<<< HEAD
-=======
             session_id,
             db,
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
         }
     }
 }
@@ -112,14 +92,11 @@ impl Handler for SshHandler {
         warn!(ip = %ip, username = %user, password = %password,
               "🔑 Tentative d'authentification");
 
-<<<<<<< HEAD
-=======
         // Persistance SQLite
         if let Err(e) = self.db.inserer_credential(&self.session_id, &ip, user, password).await {
             warn!("Erreur DB credential : {:?}", e);
         }
 
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
         // On stocke le username pour l'afficher dans le prompt
         self.session.lock().await.username = user.to_string();
 
@@ -139,15 +116,12 @@ impl Handler for SshHandler {
         warn!(ip = %ip, username = %user, key_type = %public_key.name(),
               "🔑 Tentative auth clé publique");
 
-<<<<<<< HEAD
-=======
         // Persistance SQLite (password = fingerprint de la clé)
         let fingerprint = format!("[{}]", public_key.name());
         if let Err(e) = self.db.inserer_credential(&self.session_id, &ip, user, &fingerprint).await {
             warn!("Erreur DB credential (clé publique) : {:?}", e);
         }
 
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
         self.session.lock().await.username = user.to_string();
         Ok(Auth::Accept)
     }
@@ -164,20 +138,6 @@ impl Handler for SshHandler {
         channel: Channel<Msg>,
         session: &mut Session,
     ) -> Result<bool, Self::Error> {
-<<<<<<< HEAD
-        let shell_arc = self.session.clone();   // Arc::clone, pas de copie de données
-        let handle    = session.handle();       // handle pour écrire vers le client
-        let ip        = self.peer_addr
-            .map(|a| a.to_string())
-            .unwrap_or_else(|| "?".to_string());
-
-        info!(ip = %ip, "📡 Canal de session ouvert — spawn tâche shell");
-
-        // tokio::spawn lance une tâche asynchrone indépendante.
-        // La tâche tourne en parallèle sans bloquer le reste du serveur.
-        tokio::spawn(async move {
-            if let Err(e) = run_shell(channel, handle, shell_arc, ip).await {
-=======
         let shell_arc  = self.session.clone();
         let handle     = session.handle();
         let ip         = self.peer_addr
@@ -190,7 +150,6 @@ impl Handler for SshHandler {
 
         tokio::spawn(async move {
             if let Err(e) = run_shell(channel, handle, shell_arc, ip, session_id, db).await {
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
                 tracing::error!("Erreur tâche shell : {:?}", e);
             }
         });
@@ -207,14 +166,6 @@ impl Handler for SshHandler {
 // Elle reçoit les messages du canal SSH et envoie les réponses via le Handle.
 
 async fn run_shell(
-<<<<<<< HEAD
-    mut channel: Channel<Msg>,  // canal SSH (lecture des événements)
-    handle:      Handle,        // handle SSH (écriture vers le client)
-    session:     Arc<Mutex<ShellSession>>,
-    ip:          String,
-) -> anyhow::Result<()> {
-    let channel_id = channel.id(); // identifiant numérique du canal
-=======
     mut channel: Channel<Msg>,
     handle:      Handle,
     session:     Arc<Mutex<ShellSession>>,
@@ -232,7 +183,6 @@ async fn run_shell(
     if let Err(e) = db.inserer_session(&session_id, &ip, &persona_nom, &username).await {
         warn!("Erreur DB inserer_session : {:?}", e);
     }
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
 
     // Boucle principale : on attend les messages SSH un par un
     loop {
@@ -274,19 +224,12 @@ async fn run_shell(
                 // ── Étape 1 : traitement avec le mutex ───────────────────────
                 // On traite tous les octets reçus et on accumule les réponses.
                 // On relâche le mutex AVANT tout .await (bonne pratique async).
-<<<<<<< HEAD
-                let (reponses, fermer) = {
-                    let mut shell   = session.lock().await;
-                    let mut reponses: Vec<Vec<u8>> = Vec::new();
-                    let mut fermer  = false;
-=======
                 let (reponses, fermer, log_entries) = {
                     let mut shell      = session.lock().await;
                     let mut reponses: Vec<Vec<u8>> = Vec::new();
                     let mut fermer     = false;
                     // (commande, réponse, via_ia)
                     let mut log_entries: Vec<(String, String, bool)> = Vec::new();
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
 
                     'traitement: for &octet in data.as_ref() {
                         match shell.process_byte(octet) {
@@ -303,11 +246,6 @@ async fn run_shell(
                                 info!(ip = %ip, command = %ligne, "💻 Commande");
                                 reponses.push(b"\r\n".to_vec());
 
-<<<<<<< HEAD
-                                // .await ici : execute est async pour le fallback IA
-                                // Le mutex tokio supporte les .await (contrairement à std::Mutex)
-                                let sortie = shell.execute(&ligne).await;
-=======
                                 let sortie   = shell.execute(&ligne).await;
                                 let via_ia   = shell.dernier_via_ia;
 
@@ -316,7 +254,6 @@ async fn run_shell(
                                     log_entries.push((ligne, sortie.clone(), via_ia));
                                 }
 
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
                                 if !sortie.is_empty() {
                                     reponses.push(sortie.into_bytes());
                                 }
@@ -358,11 +295,7 @@ async fn run_shell(
                         }
                     }
 
-<<<<<<< HEAD
-                    (reponses, fermer) // retourné à la sortie du bloc, mutex relâché
-=======
                     (reponses, fermer, log_entries)
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
                 };
 
                 // ── Étape 2 : envoi sans le mutex ────────────────────────────
@@ -370,12 +303,6 @@ async fn run_shell(
                     envoyer(&handle, channel_id, r).await?;
                 }
 
-<<<<<<< HEAD
-                // ── Étape 3 : fermeture si demandée ──────────────────────────
-                if fermer {
-                    handle.close(channel_id).await.ok();
-                    return Ok(());
-=======
                 // ── Étape 2b : insertion SQLite des commandes (sans mutex) ───
                 for (cmd, resp, via_ia) in log_entries {
                     if let Err(e) = db.inserer_commande(&session_id, &cmd, &resp, via_ia).await {
@@ -390,7 +317,6 @@ async fn run_shell(
                 if fermer {
                     handle.close(channel_id).await.ok();
                     break;
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
                 }
             }
 
@@ -405,8 +331,6 @@ async fn run_shell(
         }
     }
 
-<<<<<<< HEAD
-=======
     // ── Scoring MITRE ATT&CK asynchrone ──────────────────────────────────────
     //
     // On lance l'analyse DANS UNE TÂCHE SÉPARÉE après la déconnexion.
@@ -485,7 +409,6 @@ async fn run_shell(
         let _ = db.finaliser_session(&session_id, None, None, None, None).await;
     }
 
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
     Ok(())
 }
 
@@ -523,26 +446,16 @@ pub struct HoneypotServer {
     pub persona:  Arc<Persona>,
     pub vfs:      Arc<Vfs>,
     pub api_key:  Option<String>,
-<<<<<<< HEAD
-}
-
-impl HoneypotServer {
-    pub fn new(persona: Persona, vfs: Vfs, api_key: Option<String>) -> Self {
-=======
     pub db:       Database,
 }
 
 impl HoneypotServer {
     pub fn new(persona: Persona, vfs: Vfs, api_key: Option<String>, db: Database) -> Self {
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
         HoneypotServer {
             persona: Arc::new(persona),
             vfs:     Arc::new(vfs),
             api_key,
-<<<<<<< HEAD
-=======
             db,
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
         }
     }
 }
@@ -556,18 +469,11 @@ impl russh::server::Server for HoneypotServer {
             .unwrap_or_else(|| "?".to_string());
         info!(ip = %ip, "🔗 Nouvelle connexion");
 
-<<<<<<< HEAD
-        let persona  = (*self.persona).clone();
-        let vfs      = Arc::clone(&self.vfs);
-        let api_key  = self.api_key.clone();
-        SshHandler::new(peer_addr, persona, vfs, api_key)
-=======
         let persona     = (*self.persona).clone();
         let vfs         = Arc::clone(&self.vfs);
         let api_key     = self.api_key.clone();
         let session_id  = Uuid::new_v4().to_string();
         let db          = self.db.clone();
         SshHandler::new(peer_addr, persona, vfs, api_key, session_id, db)
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
     }
 }

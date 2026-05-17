@@ -225,25 +225,112 @@ fn cmd_pwd(session: &ShellSession) -> String {
 
 fn cmd_find(session: &ShellSession, args: &[&str]) -> String {
     // find [path] [-name pattern] [-type f|d]
+
+    // Filtrer les tokens de redirection shell (2>/dev/null, >/dev/null…)
+    // et supprimer les guillemets autour des patterns (-name "*.env" → *.env)
+    let args_propres: Vec<&str> = args.iter()
+        .filter(|&&a| !a.contains('>') && !a.contains('<'))
+        .copied()
+        .collect();
+    let args = args_propres.as_slice();
+
     let depart = args.iter().find(|a| !a.starts_with('-'))
                     .map(|a| session.vfs.resoudre(&session.current_dir, a))
                     .unwrap_or_else(|| session.current_dir.clone());
 
-    let filtre_nom  = args.windows(2).find(|w| w[0] == "-name").map(|w| w[1]);
-    let filtre_type = args.windows(2).find(|w| w[0] == "-type").map(|w| w[1]);
+    // Strips guillemets simples et doubles autour du pattern -name
+    let filtre_nom  = args.windows(2).find(|w| w[0] == "-name")
+                         .map(|w| w[1].trim_matches(|c| c == '"' || c == '\''));
+    let filtre_type = args.windows(2).find(|w| w[0] == "-type")
+                         .map(|w| w[1].trim_matches(|c| c == '"' || c == '\''));
 
     let mut resultats = Vec::new();
 
-    // On parcourt toutes les entrées du VFS qui sont sous `depart`
-    // (méthode simple : on ne peut pas itérer directement le HashMap depuis l'extérieur,
-    //  on utilise donc lister() récursivement)
+    // Parcours du VFS réel
     trouver_recursive(session, &depart, filtre_nom, filtre_type, &mut resultats, 0);
+
+    // Injection de fichiers "appâts" selon le persona et le pattern de recherche.
+    // Ces chemins n'existent pas dans le VFS mais apparaissent dans find pour
+    // donner l'illusion d'une vraie machine avec des données sensibles exposées.
+    // On les injecte uniquement si on ne cherche pas exclusivement des dossiers.
+    if filtre_type.unwrap_or("") != "d" {
+        for chemin in appats_persona(&session.persona.id, filtre_nom, &depart) {
+            if !resultats.contains(&chemin) {
+                resultats.push(chemin);
+            }
+        }
+    }
 
     if resultats.is_empty() {
         String::new()
     } else {
+        resultats.sort();
         resultats.iter().map(|r| format!("{}\r\n", r)).collect()
     }
+}
+
+/// Retourne des chemins de fichiers "appâts" selon le persona et le filtre -name.
+/// Ces fichiers donnent l'illusion d'une machine vulnérable avec des credentials exposés.
+fn appats_persona(persona_id: &str, filtre_nom: Option<&str>, depart: &str) -> Vec<String> {
+    let candidats: &[&str] = match persona_id {
+        "web-server" => &[
+            "/root/.ssh/id_rsa",
+            "/root/.ssh/authorized_keys",
+            "/home/ubuntu/.ssh/id_rsa",
+            "/etc/ssl/private/server.key",
+            "/etc/nginx/ssl/prod.key",
+            "/etc/nginx/ssl/prod.crt",
+            "/var/www/html/.env",
+            "/var/www/html/wp-config.php",
+            "/var/www/html/config/database.php",
+            "/var/www/html/backup/db_export_2024.sql.gz",
+            "/tmp/deploy_rsa",
+        ],
+        "database" => &[
+            "/root/.ssh/id_rsa",
+            "/root/.ssh/authorized_keys",
+            "/home/postgres/.pgpass",
+            "/var/lib/postgresql/.pgpass",
+            "/etc/postgresql/15/main/pg_hba.conf",
+            "/var/backups/postgres_full_20240315.sql",
+            "/var/backups/prod_dump_latest.sql",
+            "/opt/scripts/backup_db.sh",
+            "/home/admin/.pgpass",
+            "/tmp/restore_prod.sql",
+        ],
+        _ => &[
+            // dev-machine
+            "/home/developer/.ssh/id_rsa",
+            "/home/developer/.ssh/authorized_keys",
+            "/root/.ssh/id_rsa",
+            "/home/developer/.env",
+            "/opt/app/.env",
+            "/opt/app/config/secrets.yml",
+            "/home/developer/.docker/config.json",
+            "/opt/scripts/deploy.sh",
+            "/home/developer/projects/api/.env",
+            "/etc/ssl/private/dev-server.key",
+        ],
+    };
+
+    let prefixe = depart.trim_end_matches('/');
+
+    candidats
+        .iter()
+        .filter(|&&chemin| {
+            // Le fichier doit être sous le répertoire de départ
+            (prefixe == "" || prefixe == "/" || chemin.starts_with(&format!("{}/", prefixe)) || chemin.starts_with(prefixe))
+            // Et son nom doit correspondre au filtre -name si présent
+            && match filtre_nom {
+                None => true,
+                Some(pattern) => {
+                    let nom = chemin.rsplit('/').next().unwrap_or(chemin);
+                    glob_simple(pattern, nom)
+                }
+            }
+        })
+        .map(|&s| s.to_string())
+        .collect()
 }
 
 fn trouver_recursive(

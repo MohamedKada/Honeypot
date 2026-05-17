@@ -47,8 +47,6 @@ clap         = { version = "4", features = ["derive", "env"] }
 # "json" active la sérialisation automatique via serde_json
 reqwest      = { version = "0.12", features = ["json"] }
 serde_json   = "1"
-<<<<<<< HEAD
-=======
 
 # ── Variables d'environnement (.env) ─────────────────────────────────────────
 # dotenvy charge automatiquement le fichier .env au démarrage.
@@ -62,4 +60,3 @@ sqlx         = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlit
 
 # uuid : génération d'identifiants uniques de session (v4 = aléatoire).
 uuid         = { version = "1", features = ["v4"] }
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502

@@ -217,9 +217,10 @@ impl Vfs {
         ));
 
         // /etc/shadow
-        self.fichier("/etc/shadow",
-            "root:$6$rounds=4096$xB3kP9mN$hashhashhashhashhashhashhashhashhashhashhashhashhashhashhashhashhashhashhashhash:19500:0:99999:7:::\ndaemon:*:19500:0:99999:7:::\nbin:*:19500:0:99999:7:::\nsys:*:19500:0:99999:7:::\nsync:*:19500:0:99999:7:::\ngames:*:19500:0:99999:7:::\nnobody:*:19500:0:99999:7:::\nsshd:*:19635:0:99999:7:::\nubuntu:$6$rounds=4096$r4nd0ms4lt$hashhashhashhashhashhashhashhashhashhashhashhashhashhashhashhashhashhashhashhash:19635:0:99999:7:::\n"
-        );
+        self.fichier("/etc/shadow", &format!(
+            "root:$6$rounds=5000$xB3kP9mNsL2qR8tA$BcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRsTuVwXyZ01234567.AbCdEfGhIjKlMnOpQrStUvWx:19500:0:99999:7:::\ndaemon:*:19500:0:99999:7:::\nbin:*:19500:0:99999:7:::\nsys:*:19500:0:99999:7:::\nsync:*:19500:0:99999:7:::\ngames:*:19500:0:99999:7:::\nnobody:*:19500:0:99999:7:::\nsshd:!:19635:0:99999:7:::\n{user}:$6$rounds=5000$r4ndS4ltK9pQ2mXz$YaBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkLmNoPqRsTuVwXyZ01234567.AbCdEfGhIjKlMnOpQrSt:19635:0:99999:7:::\n",
+            user = user,
+        ));
 
         // /etc/sudoers
         self.fichier("/etc/sudoers",
@@ -377,13 +378,16 @@ impl Vfs {
         // Répertoires
         for dir in &[
             "/etc/nginx", "/etc/nginx/sites-enabled", "/etc/nginx/sites-available",
-            "/etc/nginx/conf.d", "/etc/php", "/etc/php/8.2", "/etc/php/8.2/fpm",
+            "/etc/nginx/conf.d", "/etc/nginx/ssl",
+            "/etc/php", "/etc/php/8.2", "/etc/php/8.2/fpm",
+            "/etc/ssl", "/etc/ssl/private",
             "/var/www", "/var/www/html", "/var/www/html/assets", "/var/www/html/assets/css",
             "/var/www/html/assets/js", "/var/www/html/uploads", "/var/www/html/api",
-            "/var/www/html/admin", "/var/log/nginx", "/var/log/php-fpm",
+            "/var/www/html/admin", "/var/www/html/config", "/var/www/html/backup",
+            "/var/log/nginx", "/var/log/php-fpm",
             "/var/backups/webapp", "/etc/cron.d", "/etc/letsencrypt",
             "/etc/letsencrypt/live", "/etc/letsencrypt/live/company.internal",
-            "/opt/scripts",
+            "/opt/scripts", "/root/.ssh",
         ] {
             self.dir(dir);
         }
@@ -459,6 +463,42 @@ impl Vfs {
         self.fichier("/var/backups/webapp/webapp-20260512-020001.tar.gz", "[archive gzip 41M]");
         self.fichier("/var/backups/webapp/webapp-20260513-020001.tar.gz", "[archive gzip 41M]");
         self.fichier("/var/backups/webapp/webapp-20260514-020001.tar.gz", "[archive gzip 42M]");
+        self.fichier("/var/www/html/backup/db_export_2024.sql.gz",       "[mysqldump gzip 18M — production_db]");
+
+        // ── Fichiers appâts — attirent les attaquants et maintiennent l'illusion ──
+
+        // .env Laravel/Symfony (credentials en clair)
+        self.fichier("/var/www/html/.env",
+            "APP_NAME=CompanyPortal\nAPP_ENV=production\nAPP_KEY=base64:Xk9mN2pQrL8vF4jT1hY6wZ3uB5cE0aD7nO6pXkMqR2s=\nAPP_DEBUG=false\nAPP_URL=https://company.internal\n\nDB_CONNECTION=mysql\nDB_HOST=192.168.10.15\nDB_PORT=3306\nDB_DATABASE=webapp_prod\nDB_USERNAME=webapp_user\nDB_PASSWORD=Pr0d!DbP@ssw0rd_2024\n\nREDIS_HOST=127.0.0.1\nREDIS_PASSWORD=null\nREDIS_PORT=6379\n\nMAIL_MAILER=smtp\nMAIL_HOST=smtp.company.internal\nMAIL_PORT=587\nMAIL_USERNAME=noreply@company.internal\nMAIL_PASSWORD=Sm7p#M@ilP4ss!\n\nAWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\nAWS_DEFAULT_REGION=eu-west-3\nAWS_BUCKET=company-prod-assets\n\nSESSION_DRIVER=redis\nQUEUE_CONNECTION=redis\n\nJWT_SECRET=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.aGVhZGVy.c2lnbmF0dXJl\nSTRIPE_SECRET=sk_live_51NxFakeKeyForHoneypot0000000000000000\n"
+        );
+
+        // wp-config.php (appât WordPress)
+        self.fichier("/var/www/html/wp-config.php",
+            "<?php\n/**\n * WordPress configuration — DO NOT SHARE\n */\ndefine( 'DB_NAME', 'wordpress_prod' );\ndefine( 'DB_USER', 'wp_admin' );\ndefine( 'DB_PASSWORD', 'W0rdpr3ss#Prod!2024' );\ndefine( 'DB_HOST', '192.168.10.15' );\ndefine( 'DB_CHARSET', 'utf8mb4' );\ndefine( 'DB_COLLATE', '' );\n\n$table_prefix = 'wp_';\n\ndefine( 'AUTH_KEY',         'eBfGhIjKlMnOpQrStUvWxYzAaBbCcDdEe' );\ndefine( 'SECURE_AUTH_KEY',  'fFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvV' );\ndefine( 'LOGGED_IN_KEY',    'wWxXyYzZaAbBcCdDeEfFgGhHiIjJkKlLmM' );\ndefine( 'NONCE_KEY',        'nNoOpPqQrRsStTuUvVwWxXyYzZaAbBcCdD' );\n\ndefine( 'WP_DEBUG', false );\ndefine( 'WP_DEBUG_LOG', false );\n\nif ( ! defined( 'ABSPATH' ) ) {\n\tdefine( 'ABSPATH', __DIR__ . '/' );\n}\nrequire_once ABSPATH . 'wp-settings.php';\n"
+        );
+
+        // Clé privée TLS (factice mais réaliste)
+        self.fichier("/etc/ssl/private/server.key",
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA3m6pHbss4D/6ZXFPYt0Nv2ZfBjSh3EVqFt7OIWHPT+GXNQ\nwVmKpR9tL3sX2aB7cD4fE6hG8iJ0kL1mN2oP3qR4sT5uV6wX7yZ8aAbBcCdDeE\nfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZaAbBcCdDeEfFgGhHiIjJ\nkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZaAbBcCdDeEfFgGhHiIjJkKlLmMnNoO\npPqQrRsStTuUvVwWxXyYzZaAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStT\nuUvVwWxXyYzZaAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyY\nzZaAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZaAbBcCdD\neEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZaAbBcCdDeEfFgGhHiI\njJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZQIDAQABAoIBAC5mLpR8tN3vX2wY4z\nAaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789\naBcDeFgHiJkLmNoPqRsTuVwXyZ0ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij\n-----END RSA PRIVATE KEY-----\n"
+        );
+
+        self.fichier("/etc/nginx/ssl/prod.key",
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA2n4mGbqq3A/5WUDNXs8Lu1YdAhQf2DUrEs6NJUDLS+EVMH\nxTjGnQ7sK2rW1ZA6bC3eD4fE5hF7gG8hH9iI0jJ1kK2lL3mM4nN5oO6pP7qQ8\nrR9sS0tT1uU2vV3wW4xX5yY6zZ7aA8bB9cC0dD1eE2fF3gG4hH5iI6jJ7kK8l\nL9mM0nN1oO2pP3qQ4rR5sS6tT7uU8vV9wW0xX1yY2zZ3aA4bB5cC6dD7eE8fF\n9gG0hH1iI2jJ3kK4lL5mM6nN7oO8pP9qQ0rR1sS2tT3uU4vV5wW6xX7yY8zZ\n9aA0bB1cC2dD3eE4fF5gG6hH7iI8jJ9kK0lL1mM2nN3oO4pP5qQ6rR7sS8tT\nuUvVwWxXyYzZaAbBcCdDeEfFQIDAQABAoIBAC8nMpS9uO4wZ3xA5yB6zC7aD8b\nE9cF0dG1eH2fI3gJ4hK5iL6jM7kN8lO9mP0nQ1oR2pS3qT4rU5sV6tW7uX8v\n-----END RSA PRIVATE KEY-----\n"
+        );
+
+        // Clé SSH root (leurre — attire les attaquants cherchant une élévation)
+        self.fichier("/root/.ssh/id_rsa",
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA BG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gt\nZWQyNTUxOQAAACB4Kp2tFjmNnRKMzHXFQXKMp7qFnrCHQLzLm8AjzXvKqAAAAIBvK\np7tFjmNnRKMzHXFQXKMp7qFnrCHQLzLm8AjzXvKqAAAAC3NzaC1lZDI1NTE5AAAAI\nHgKnaxWOZGdEozMdcVBcoynu YWecIdAs8ubyALNe8qqAAAAQGKnaxWOZGdEozMdcVB\ncoynu YWecIdAs8ubyALNe8qqeAqdrFY5kZ0SjMx1xUFyjKe5hZ5wh0Czy7vIAs17y\nqgAAAA5yb290QHdlYi1wcm9kAQID\n-----END OPENSSH PRIVATE KEY-----\n"
+        );
+
+        self.fichier("/root/.ssh/authorized_keys",
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBvKp7tFjmNnRKMzHXFQXKMp7qFnrCHQLzLm8AjzXvKq deploy@bastion\nssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7x+mNkP2QrL8vF4jT1hY6wZ3uB5cE0aD7nO9pXkMqR2sV admin@mgmt-01\n"
+        );
+
+        // Clé de déploiement dans /tmp (oubliée par un admin — très tentant)
+        self.fichier("/tmp/deploy_rsa",
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA BG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gt\nZWQyNTUxOQAAACBdeployKEYhoneypotFAKEkeyFORtestingONLYnotREALcredential\nAAAAIBdeployKEYhoneypotFAKEkeyFORtestingONLYnotREALcredentialAQIDBAUG\n-----END OPENSSH PRIVATE KEY-----\n"
+        );
 
         // Historique bash
         self.fichier(&format!("{}/.bash_history", home),

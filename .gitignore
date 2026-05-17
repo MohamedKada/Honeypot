@@ -1,13 +1,10 @@
 # Binaires Rust
 /target/
 
-<<<<<<< HEAD
-=======
 # Fichier de configuration locale — contient les secrets (clé API…)
 # Ne jamais commiter ce fichier. Utilisez .env.example comme modèle.
 .env
 
->>>>>>> 2384e2ccef211339b2ad54cb4cd8408c9d0ca502
 # Clé SSH hôte persistée (fingerprint local, ne pas versionner)
 ssh_host_ed25519_key
 
