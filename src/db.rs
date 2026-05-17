@@ -18,6 +18,45 @@ use std::str::FromStr;
 use tracing::{info, warn};
 
 // ----------------------------------------------------------------------------
+// Structs de lecture (pour le rapport HTML)
+// ----------------------------------------------------------------------------
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct SessionData {
+    pub id:          String,
+    pub ip:          String,
+    pub persona:     String,
+    pub username:    String,
+    pub started_at:  String,
+    pub ended_at:    Option<String>,
+    pub score_mitre: Option<i64>,
+    pub tactiques:   Option<String>,
+    pub techniques:  Option<String>,
+    pub resume:      Option<String>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct CommandeData {
+    pub timestamp: String,
+    pub commande:  String,
+    pub reponse:   String,
+    pub via_ia:    i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct CredentialFreq {
+    pub username: String,
+    pub password: String,
+    pub nb:       i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct CommandeFreq {
+    pub commande: String,
+    pub nb:       i64,
+}
+
+// ----------------------------------------------------------------------------
 // Structure principale
 // ----------------------------------------------------------------------------
 
@@ -209,6 +248,61 @@ impl Database {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    // ── requêtes rapport ─────────────────────────────────────────────────────
+
+    /// Statistiques globales pour l'en-tête du rapport.
+    pub async fn stats_globales(&self) -> Result<(i64, i64, i64, i64, f64)> {
+        let nb_sessions: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sessions")
+            .fetch_one(&self.pool).await?;
+        let nb_creds: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM credentials")
+            .fetch_one(&self.pool).await?;
+        let nb_cmds: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM commands")
+            .fetch_one(&self.pool).await?;
+        let nb_alertes: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM alerts")
+            .fetch_one(&self.pool).await?;
+        let score_moy: (Option<f64>,) = sqlx::query_as(
+            "SELECT AVG(CAST(score_mitre AS REAL)) FROM sessions WHERE score_mitre IS NOT NULL"
+        ).fetch_one(&self.pool).await?;
+        Ok((nb_sessions.0, nb_creds.0, nb_cmds.0, nb_alertes.0, score_moy.0.unwrap_or(0.0)))
+    }
+
+    /// Toutes les sessions triées par date décroissante.
+    pub async fn toutes_sessions(&self) -> Result<Vec<SessionData>> {
+        let rows = sqlx::query_as::<_, SessionData>(
+            "SELECT id, ip, persona, username, started_at, ended_at,
+                    score_mitre, tactiques, techniques, resume
+             FROM sessions ORDER BY started_at DESC"
+        ).fetch_all(&self.pool).await?;
+        Ok(rows)
+    }
+
+    /// Commandes d'une session donnée, triées par timestamp.
+    pub async fn commandes_session(&self, session_id: &str) -> Result<Vec<CommandeData>> {
+        let rows = sqlx::query_as::<_, CommandeData>(
+            "SELECT timestamp, commande, reponse, via_ia
+             FROM commands WHERE session_id = ? ORDER BY timestamp ASC"
+        ).bind(session_id).fetch_all(&self.pool).await?;
+        Ok(rows)
+    }
+
+    /// Top N credentials les plus fréquents.
+    pub async fn top_credentials(&self, n: i64) -> Result<Vec<CredentialFreq>> {
+        let rows = sqlx::query_as::<_, CredentialFreq>(
+            "SELECT username, password, COUNT(*) as nb
+             FROM credentials GROUP BY username, password ORDER BY nb DESC LIMIT ?"
+        ).bind(n).fetch_all(&self.pool).await?;
+        Ok(rows)
+    }
+
+    /// Top N commandes les plus fréquentes.
+    pub async fn top_commandes(&self, n: i64) -> Result<Vec<CommandeFreq>> {
+        let rows = sqlx::query_as::<_, CommandeFreq>(
+            "SELECT commande, COUNT(*) as nb
+             FROM commands GROUP BY commande ORDER BY nb DESC LIMIT ?"
+        ).bind(n).fetch_all(&self.pool).await?;
+        Ok(rows)
     }
 
     // ── alerts ───────────────────────────────────────────────────────────────
